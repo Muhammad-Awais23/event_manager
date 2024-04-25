@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:event_manager/components/components.dart';
 import 'package:event_manager/components/constants.dart';
 import 'package:event_manager/screens/mainscreen.dart';
@@ -22,11 +23,65 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+      ),
+    );
+  }
+
+  Future<bool> checkAdmin(String email) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: email.toLowerCase())
+          .get();
+
+      if (snapshot.docs.isNotEmpty) {
+        final isAdmin = snapshot.docs.first.data()['isAdmin'] ?? false;
+        return isAdmin;
+      }
+    } catch (e) {
+      print('Error checking admin status: $e');
+    }
+    return false;
+  }
+
+  void _navigateToMainScreen() {
+    RouteHelper.isLoggedIn = true;
+    Navigator.pushReplacementNamed(context, RouteHelper.mainscreen);
+  }
+
+  void _navigateToAdminScreen() {
+    RouteHelper.isLoggedIn = true;
+    Navigator.pushReplacementNamed(context, RouteHelper.admin);
+  }
+
+  void _showErrorDialog() {
+    _setSavingState(false);
+    signUpAlert(
+      context: context,
+      onPressed: () => _setSavingState(false),
+      title: 'WRONG PASSWORD OR EMAIL',
+      desc: 'Confirm your email and password and try again',
+      btnText: 'Try Again',
+    ).show();
+  }
+
+  void _setSavingState(bool value) {
+    if (context.mounted) {
+      setState(() {
+        _saving = value;
+      });
+    }
+  }
+
   final _auth = FirebaseAuth.instance;
   late String _email = '';
   late String _password = '';
   bool _saving = false;
-
+  bool isAdminCheckButton = false;
   final userCredential = ValueNotifier<UserCredential?>(null);
   @override
   Widget build(BuildContext context) {
@@ -74,6 +129,19 @@ class _LoginScreenState extends State<LoginScreen> {
                               hintText: 'Password'),
                         ),
                       ),
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: isAdminCheckButton,
+                            onChanged: (bool? value) {
+                              setState(() {
+                                isAdminCheckButton = value ?? false;
+                              });
+                            },
+                          ),
+                          const Text('Log in as Admin')
+                        ],
+                      ),
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 10.0),
                         child: CustomBottomScreen(
@@ -85,62 +153,59 @@ class _LoginScreenState extends State<LoginScreen> {
                             setState(() {
                               _saving = true;
                             });
+
                             if (_email.isEmpty || _password.isEmpty) {
-                              setState(() {
-                                _saving = false;
-                              });
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Email and password cannot be empty.'),
-                                ),
-                              );
+                              _showSnackBar(
+                                  'Email and password cannot be empty.');
                               return;
                             }
-                            try {
-                              await _auth.signInWithEmailAndPassword(
-                                  email: _email, password: _password);
-                              RouteHelper.isLoggedIn = true;
-                              print(_email);
-                              print(_password);
-                              if (context.mounted) {
-                                setState(() {
-                                  _saving = false;
-                                });
-
-                                Navigator.pushReplacementNamed(
-                                    context, RouteHelper.mainscreen);
+                            if (isAdminCheckButton) {
+                              final bool isAdmin = await checkAdmin(_email);
+                              if (isAdmin) {
+                                _navigateToAdminScreen();
+                              } else {
+                                _setSavingState(false);
+                                _showSnackBar(
+                                    'You are not authorized to log in as admin.');
                               }
-                            } catch (e) {
-                              signUpAlert(
-                                context: context,
-                                onPressed: () {
-                                  if (context.mounted) {
-                                    setState(() {
-                                      _saving = false;
-                                    });
-                                  }
-                                  print('ERROn');
-                                },
-                                title: 'WRONG PASSWORD OR EMAIL',
-                                desc:
-                                    'Confirm your email and password and try again',
-                                btnText: 'Try Again',
-                              ).show();
+                            } else {
+                              try {
+                                final UserCredential userCredential =
+                                    await _auth.signInWithEmailAndPassword(
+                                  email: _email,
+                                  password: _password,
+                                );
+
+                                final User? user = userCredential.user;
+
+                                if (user != null) {
+                                  setState(() {
+                                    RouteHelper.isLoggedIn = true;
+                                  });
+
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          HomeScreen(email: _email),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                _showErrorDialog();
+                              } finally {
+                                _setSavingState(false);
+                              }
                             }
                           },
-                          questionPressed: () {
-                            signUpAlert(
-                              onPressed: () async {
-                                await FirebaseAuth.instance
-                                    .sendPasswordResetEmail(email: _email);
-                              },
-                              title: 'RESET YOUR PASSWORD',
-                              desc:
-                                  'Click on the button to reset your password',
-                              btnText: 'Reset Now',
-                              context: context,
-                            ).show();
+                          questionPressed: () async {
+                            try {
+                              await FirebaseAuth.instance
+                                  .sendPasswordResetEmail(email: _email);
+                              _showSnackBar('Password reset email sent.');
+                            } catch (e) {
+                              _showErrorDialog();
+                            }
                           },
                         ),
                       ),
@@ -162,15 +227,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                   onPressed: () async {
                                     userCredential.value =
                                         await SignIn().signInWithGoogle();
-                                    if (userCredential.value != null)
-                                      print(userCredential.value!.user!.email);
 
-                                    Navigator.pushReplacement(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => MyHomePage(),
-                                      ),
-                                    );
+                                    if (userCredential.value != null) {
+                                      print(userCredential.value!.user!.email);
+                                      _navigateToMainScreen();
+                                    }
                                   },
                                   icon: CircleAvatar(
                                     radius: 25,

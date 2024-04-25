@@ -7,18 +7,28 @@ class SignIn {
     try {
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
 
-      final GoogleSignInAuthentication? googleAuth =
-          await googleUser?.authentication;
+      if (googleUser == null) {
+        // User cancelled login
+        return null;
+      }
+
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      if (googleAuth.accessToken == null || googleAuth.idToken == null) {
+        // Missing access token or ID token
+        return null;
+      }
 
       final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth?.accessToken,
-        idToken: googleAuth?.idToken,
+        accessToken: googleAuth.accessToken!,
+        idToken: googleAuth.idToken!,
       );
 
       return await FirebaseAuth.instance.signInWithCredential(credential);
     } on Exception catch (e) {
-      // TODO
       print('exception->$e');
+      return null;
     }
   }
 

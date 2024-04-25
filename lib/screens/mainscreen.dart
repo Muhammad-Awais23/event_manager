@@ -1,31 +1,59 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'login_screen.dart';
 
-class MyHomePage extends StatefulWidget {
+class HomeScreen extends StatefulWidget {
+  final String email;
+
+  HomeScreen({required this.email});
+
   @override
-  _MyHomePageState createState() => _MyHomePageState();
+  _HomeScreenState createState() => _HomeScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  String _username = '';
+class _HomeScreenState extends State<HomeScreen> {
+  String? _username;
 
   @override
   void initState() {
     super.initState();
-    _getUserData();
+    _fetchUsername();
   }
 
-  Future<void> _getUserData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final userData = await FirebaseFirestore.instance
+  Future<void> _fetchUsername() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
           .collection('users')
-          .doc(user.uid)
+          .where('email', isEqualTo: widget.email)
           .get();
-      setState(() {
-        _username = userData['username'];
-      });
+
+      if (snapshot.docs.isNotEmpty) {
+        final userData = snapshot.docs.first.data();
+        setState(() {
+          _username = userData['username'];
+        });
+      }
+    } catch (e) {
+      print('Error fetching username: $e');
+    }
+  }
+
+  Future<void> _handleLogout() async {
+    final FirebaseAuth _auth = FirebaseAuth.instance;
+    final GoogleSignIn googleSignIn = GoogleSignIn();
+
+    try {
+      await _auth.signOut();
+      await googleSignIn.signOut();
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => LoginScreen()),
+        (Route<dynamic> route) => false,
+      );
+    } catch (e) {
+      print('Error logging out: $e');
     }
   }
 
@@ -33,66 +61,76 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Welcome $_username'),
+        title: const Text('Mr Event'),
       ),
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
           children: <Widget>[
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: Colors.blue,
-              ),
-              child: Text(
-                'Welcome $_username',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
+            Container(
+              height: 250,
+              child: DrawerHeader(
+                decoration: const BoxDecoration(
+                  color: Colors.blue,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const CircleAvatar(
+                      radius: 40,
+                      backgroundColor: Colors.white,
+                      // You can add user profile image here
+                    ),
+                    Text(
+                      _username ?? '',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                      ),
+                    ),
+                    Text(
+                      widget.email,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
             ListTile(
-              leading: Icon(Icons.account_circle),
-              title: Text('Profile'),
+              leading: const Icon(Icons.person), // Icon for Profile
+              title: const Text('Profile'),
               onTap: () {
-                // Handle profile option
+                // Handle profile
               },
             ),
             ListTile(
-              leading: Icon(Icons.settings),
-              title: Text('Account Management'),
+              leading: const Icon(Icons.feedback), // Icon for Feedback
+              title: const Text('Feedback'),
               onTap: () {
-                // Handle account management option
+                // Handle feedback
               },
             ),
             ListTile(
-              leading: Icon(Icons.contact_mail),
-              title: Text('Contact us'),
+              leading: const Icon(Icons.contact_phone), // Icon for Contact Us
+              title: const Text('Contact Us'),
               onTap: () {
-                // Handle contact us option
+                // Handle contact us
               },
             ),
             ListTile(
-              leading: Icon(Icons.logout),
-              title: Text('Logout'),
-              onTap: () async {
-                // Handle logout option
-                await FirebaseAuth.instance.signOut();
-                // Redirect to login page or wherever you need
-              },
+              leading: const Icon(Icons.logout), // Icon for Logout
+              title: const Text('Logout'),
+              onTap: _handleLogout,
             ),
           ],
         ),
       ),
-      body: Center(
-        child: Text('Your content here'),
+      body: const Center(
+        child: Text('Your content goes here'),
       ),
     );
   }
-}
-
-void main() {
-  runApp(MaterialApp(
-    home: MyHomePage(),
-  ));
 }
